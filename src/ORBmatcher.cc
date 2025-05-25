@@ -26,6 +26,7 @@
 #include "Thirdparty/DBoW2/DBoW2/FeatureVector.h"
 
 #include<stdint-gcc.h>
+#include <tbb/enumerable_thread_specific.h>
 
 using namespace std;
 
@@ -42,12 +43,17 @@ namespace ORB_SLAM3
 
     int ORBmatcher::SearchByProjection(Frame &F, const vector<MapPoint*> &vpMapPoints, const float th, const bool bFarPoints, const float thFarPoints)
     {
-        int nmatches=0, left = 0, right = 0;
+        //int nmatches=0;
+        tbb::enumerable_thread_specific<int> local_counters(0);
+        int left = 0, right = 0; // not used?
 
         const bool bFactor = th!=1.0;
 
-        for(size_t iMP=0; iMP<vpMapPoints.size(); iMP++)
-        {
+        // for(size_t iMP=0; iMP<vpMapPoints.size(); iMP++)
+        // {
+        tbb::parallel_for(tbb::blocked_range<size_t>(0, vpMapPoints.size()), [&](tbb::blocked_range<size_t> range) {
+        int &nmatches = local_counters.local();
+        for (size_t iMP = range.begin(); iMP != range.end(); iMP++) {
             MapPoint* pMP = vpMapPoints[iMP];
 
             if(pMP->mnLastFrameSeen == F.mnId)
@@ -213,7 +219,12 @@ namespace ORB_SLAM3
                 }
             }
         }
-        return nmatches;
+        });
+        int total = 0;
+        for (const auto& count : local_counters) {
+            total += count;
+        }
+        return total;
     }
 
     float ORBmatcher::RadiusByViewingCos(const float &viewCos)
@@ -664,6 +675,10 @@ namespace ORB_SLAM3
 
         for(size_t i1=0, iend1=F1.mvKeysUn.size(); i1<iend1; i1++)
         {
+        // Traverse the feature points in the initialization frame
+        // tbb::parallel_for(
+        // tbb::blocked_range<size_t>(0, F1.mvKeysUn.size()), [&](tbb::blocked_range<size_t> rF1mvKeysUn) {
+        // for (size_t i1 = rF1mvKeysUn.begin(), iend1 = rF1mvKeysUn.end(); i1 < iend1; i1++) {
             cv::KeyPoint kp1 = F1.mvKeysUn[i1];
             int level1 = kp1.octave;
             if(level1>0)
@@ -730,8 +745,8 @@ namespace ORB_SLAM3
                     }
                 }
             }
-
-        }
+        //}
+        }//);
 
         if(mbCheckOrientation)
         {
@@ -1680,6 +1695,9 @@ namespace ORB_SLAM3
 
     int ORBmatcher::SearchByProjection(Frame &CurrentFrame, const Frame &LastFrame, const float th, const bool bMono)
     {
+
+        // tbb::enumerable_thread_specific<int> local_counters(0);
+
         int nmatches = 0;
 
         // Rotation Histogram (to check rotation consistency)
@@ -1696,6 +1714,12 @@ namespace ORB_SLAM3
 
         const bool bForward = tlc(2)>CurrentFrame.mb && !bMono;
         const bool bBackward = -tlc(2)>CurrentFrame.mb && !bMono;
+
+        // tbb::parallel_for(tbb::blocked_range<int>(0, LastFrame.N), [&](tbb::blocked_range<int> range){
+
+        //     int nmatches = local_counters.local();
+        //     for(int i=range.begin(); i!=range.end(); i++)
+        //     {
 
         for(int i=0; i<LastFrame.N; i++)
         {
@@ -1865,6 +1889,12 @@ namespace ORB_SLAM3
                 }
             }
         }
+        //});
+
+        // int nmatches = 0;
+        // for (const auto& count : local_counters) {
+        //     nmatches += count;
+        // }
 
         //Apply rotation consistency
         if(mbCheckOrientation)

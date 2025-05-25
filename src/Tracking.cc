@@ -3345,24 +3345,41 @@ void Tracking::CreateNewKeyFrame()
 void Tracking::SearchLocalPoints()
 {
     // Do not search map points already matched
-    for(vector<MapPoint*>::iterator vit=mCurrentFrame.mvpMapPoints.begin(), vend=mCurrentFrame.mvpMapPoints.end(); vit!=vend; vit++)
-    {
-        MapPoint* pMP = *vit;
-        if(pMP)
-        {
-            if(pMP->isBad())
-            {
-                *vit = static_cast<MapPoint*>(NULL);
-            }
-            else
-            {
-                pMP->IncreaseVisible();
-                pMP->mnLastFrameSeen = mCurrentFrame.mnId;
-                pMP->mbTrackInView = false;
-                pMP->mbTrackInViewR = false;
+    // for(vector<MapPoint*>::iterator vit=mCurrentFrame.mvpMapPoints.begin(), vend=mCurrentFrame.mvpMapPoints.end(); vit!=vend; vit++)
+    // {
+    //     MapPoint* pMP = *vit;
+    //     if(pMP)
+    //     {
+    //         if(pMP->isBad())
+    //         {
+    //             *vit = static_cast<MapPoint*>(NULL);
+    //         }
+    //         else
+    //         {
+    //             pMP->IncreaseVisible();
+    //             pMP->mnLastFrameSeen = mCurrentFrame.mnId;
+    //             pMP->mbTrackInView = false;
+    //             pMP->mbTrackInViewR = false;
+    //         }
+    //     }
+    // }
+
+    int nN = mCurrentFrame.mvpMapPoints.size();
+    tbb::parallel_for(tbb::blocked_range<int>(0, nN), [&](tbb::blocked_range<int> rnN) {
+        for (int i = rnN.begin(); i < rnN.end(); i++) {
+            MapPoint * pMP = mCurrentFrame.mvpMapPoints[i];
+            if (pMP) {
+                if (pMP->isBad())
+                    mCurrentFrame.mvpMapPoints[i] = static_cast<MapPoint *>(nullptr);
+                else {
+                    pMP->IncreaseVisible();
+                    pMP->mnLastFrameSeen = mCurrentFrame.mnId;
+                    pMP->mbTrackInView = false;
+                    pMP->mbTrackInViewR = false;
+                }
             }
         }
-    }
+    });
 
     int nToMatch=0;
 

@@ -49,6 +49,7 @@ include_directories(
     ${PROJECT_SOURCE_DIR}/Thirdparty/Sophus
     ${EIGEN3_INCLUDE_DIR}
     ${Pangolin_INCLUDE_DIRS}
+    ${TBB_INCLUDE_DIR}
 )
 
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/lib)
@@ -124,6 +125,7 @@ target_link_libraries(${PROJECT_NAME}
     ${PROJECT_SOURCE_DIR}/Thirdparty/g2o/lib/libg2o.so
     -lboost_serialization
     -lcrypto
+    ${TBB_LIBRARIES}
 )
 
 # If RealSense SDK is found the library is added and its examples compiled

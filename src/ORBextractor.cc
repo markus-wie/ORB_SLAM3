@@ -58,6 +58,8 @@
 #include <opencv2/imgproc/imgproc.hpp>
 #include <vector>
 #include <iostream>
+#include <tbb/enumerable_thread_specific.h>
+#include <tbb/concurrent_vector.h>
 
 #include "ORBextractor.h"
 
@@ -75,26 +77,32 @@ namespace ORB_SLAM3
 
     static float IC_Angle(const Mat& image, Point2f pt,  const vector<int> & u_max)
     {
+        // improvement from https://github.com/UZ-SLAMLab/ORB_SLAM3/pull/878
         int m_01 = 0, m_10 = 0;
 
         const uchar* center = &image.at<uchar> (cvRound(pt.y), cvRound(pt.x));
+        int step = (int)image.step1();
 
-        // Treat the center line differently, v=0
+        // Treat the center line differently, v=0 && u=0
         for (int u = -HALF_PATCH_SIZE; u <= HALF_PATCH_SIZE; ++u)
             m_10 += u * center[u];
+        for (int v = -HALF_PATCH_SIZE; v <= HALF_PATCH_SIZE; ++v)
+            m_01 += v * center[v * step];
 
         // Go line by line in the circuI853lar patch
-        int step = (int)image.step1();
         for (int v = 1; v <= HALF_PATCH_SIZE; ++v)
         {
-            // Proceed over the two lines
+            // Proceed over four symmetrical points
             int v_sum = 0;
             int d = u_max[v];
-            for (int u = -d; u <= d; ++u)
+            for (int u = 1; u <= d; ++u)
             {
-                int val_plus = center[u + v*step], val_minus = center[u - v*step];
-                v_sum += (val_plus - val_minus);
-                m_10 += u * (val_plus + val_minus);
+                int lu = center[-u - v * step];
+                int ld = center[-u + v * step];
+                int ru = center[u - v * step];
+                int rd = center[u + v * step];
+                m_10 += u * (ru + rd - lu - ld);
+                v_sum += ld + rd - lu - ru;
             }
             m_01 += v * v_sum;
         }
@@ -895,6 +903,114 @@ namespace ORB_SLAM3
             computeOrientation(mvImagePyramid[level], allKeypoints[level], umax);
     }
 
+    void ORBextractor::ComputeKeyPointsOctTree_(vector<vector<KeyPoint> > & allKeypoints)
+    {
+        allKeypoints.resize(nlevels);
+
+        const float W = 35;
+
+        tbb::parallel_for(tbb::blocked_range<int>(0, nlevels), [&](tbb::blocked_range<int> rnlevels) {
+            for (int level = rnlevels.begin(); level != rnlevels.end(); ++level) {
+            const int minBorderX = EDGE_THRESHOLD - 3;
+            const int minBorderY = minBorderX;
+            const int maxBorderX = mvImagePyramid[level].cols - EDGE_THRESHOLD + 3;
+            const int maxBorderY = mvImagePyramid[level].rows - EDGE_THRESHOLD + 3;
+
+            std::mutex vToDistributeKeysMutex;
+            vector<cv::KeyPoint> vToDistributeKeys;
+            vToDistributeKeys.reserve(nfeatures * 10);
+
+            const float width = (maxBorderX - minBorderX);
+            const float height = (maxBorderY - minBorderY);
+
+            const int nCols = width / W;
+            const int nRows = height / W;
+            const int wCell = ceil(width / nCols);
+            const int hCell = ceil(height / nRows);
+
+            // step1. Traverse each row and each column, and use high and low
+            // thresholds to search for FAST feature points in corner
+            tbb::parallel_for(tbb::blocked_range<int>(0, nRows), [&](tbb::blocked_range<int> rR) {
+                for (int i = rR.begin(); i < rR.end(); i++) {
+                    const float iniY = minBorderY + i * hCell;
+                    float maxY = iniY + hCell + 6;
+
+                    if (iniY >= maxBorderY - 3) continue;
+                    if (maxY > maxBorderY) maxY = maxBorderY;
+                    tbb::parallel_for(tbb::blocked_range<int>(0, nCols), [&](tbb::blocked_range<int> rC) {
+                        for (int j = rC.begin(); j < rC.end(); j++) {
+                            const float iniX = minBorderX + j * wCell;
+                            float maxX = iniX + wCell + 6;
+                            if (iniX >= maxBorderX - 6) continue;
+                            if (maxX > maxBorderX) maxX = maxBorderX;
+
+                            std::vector<cv::KeyPoint> vKeysCell;
+
+                            // First search for FAST feature points with ini
+                            // threshold
+                            FAST(
+                                mvImagePyramid[level].rowRange(iniY, maxY).colRange(iniX, maxX), vKeysCell,
+                                iniThFAST, true);
+
+                            if (vKeysCell.empty()) {
+                                // If the ini threshold cannot be searched, use the
+                                // min threshold to search for FAST feature points
+                                FAST(
+                                    mvImagePyramid[level].rowRange(iniY, maxY).colRange(iniX, maxX), vKeysCell,
+                                    minThFAST, true);
+                            }
+                            // Add all the feature points extracted from vKeysCell
+                            // to the container vToDistributeKeys
+                            if (!vKeysCell.empty()) {
+                                std::vector<cv::KeyPoint> localBuffer;
+                                localBuffer.reserve(vKeysCell.size());
+
+                                for (auto& kp : vKeysCell) {
+                                    kp.pt.x += j * wCell;
+                                    kp.pt.y += i * hCell;
+                                    localBuffer.push_back(kp);
+                                }
+
+                                {
+                                    std::lock_guard<std::mutex> lock(vToDistributeKeysMutex);
+                                    vToDistributeKeys.insert(vToDistributeKeys.end(), localBuffer.begin(), localBuffer.end());
+                                }
+                            }
+                        }
+                    });
+                }
+            });
+
+            vector<KeyPoint> & keypoints = allKeypoints[level];
+            keypoints.reserve(nfeatures);
+
+            keypoints = DistributeOctTree(
+                vToDistributeKeys, minBorderX, maxBorderX, minBorderY, maxBorderY,
+                mnFeaturesPerLevel[level], level);
+
+            const int scaledPatchSize = PATCH_SIZE * mvScaleFactor[level];
+
+            // Add border to coordinate and scale information
+            const int nkps = keypoints.size();
+            tbb::parallel_for(tbb::blocked_range<int>(0, nkps), [&](tbb::blocked_range<int> rnkps) {
+                for (int i = rnkps.begin(); i < rnkps.end(); i++) {
+                    keypoints[i].pt.x += minBorderX;
+                    keypoints[i].pt.y += minBorderY;
+                    keypoints[i].octave = level;
+                    keypoints[i].size = scaledPatchSize;
+                }
+            });
+            }
+        });
+        // compute orientations
+        tbb::parallel_for(tbb::blocked_range<int>(0, nlevels), [&](tbb::blocked_range<int> rnLevels) {
+            for (int level = rnLevels.begin(); level < rnLevels.end(); ++level) {
+                for (int level = 0; level < nlevels; ++level)
+                    computeOrientation(mvImagePyramid[level], allKeypoints[level], umax);
+            }
+        });
+    }
+
     void ORBextractor::ComputeKeyPointsOld(std::vector<std::vector<KeyPoint> > &allKeypoints)
     {
         allKeypoints.resize(nlevels);
@@ -1079,8 +1195,13 @@ namespace ORB_SLAM3
     {
         descriptors = Mat::zeros((int)keypoints.size(), 32, CV_8UC1);
 
-        for (size_t i = 0; i < keypoints.size(); i++)
-            computeOrbDescriptor(keypoints[i], image, &pattern[0], descriptors.ptr((int)i));
+        // for (size_t i = 0; i < keypoints.size(); i++)
+        //     computeOrbDescriptor(keypoints[i], image, &pattern[0], descriptors.ptr((int)i));
+        tbb::parallel_for(
+            tbb::blocked_range<size_t>(0, keypoints.size()), [&](tbb::blocked_range<size_t> rKeypoints) {
+            for (size_t i = rKeypoints.begin(); i != rKeypoints.end(); i++)
+                computeOrbDescriptor(keypoints[i], image, &pattern[0], descriptors.ptr((int)i));
+            });
     }
 
     int ORBextractor::operator()( InputArray _image, InputArray _mask, vector<KeyPoint>& _keypoints,
@@ -1097,14 +1218,26 @@ namespace ORB_SLAM3
         ComputePyramid(image);
 
         vector < vector<KeyPoint> > allKeypoints;
-        ComputeKeyPointsOctTree(allKeypoints);
+        //ComputeKeyPointsOctTree(allKeypoints);
+        ComputeKeyPointsOctTree_(allKeypoints);
         //ComputeKeyPointsOld(allKeypoints);
 
         Mat descriptors;
 
-        int nkeypoints = 0;
-        for (int level = 0; level < nlevels; ++level)
-            nkeypoints += (int)allKeypoints[level].size();
+        // int nkeypoints = 0;
+        // for (int level = 0; level < nlevels; ++level)
+        //     nkeypoints += (int)allKeypoints[level].size();
+
+        int nkeypoints = tbb::parallel_reduce(
+            tbb::blocked_range<int>(0, nlevels), 0,
+            [&](tbb::blocked_range<int> r, int running_total) {
+                for (int i = r.begin(); i != r.end(); ++i) {
+                    running_total += (int)allKeypoints[i].size();
+                }
+                return running_total;
+            },
+            std::plus<int>());
+
         if( nkeypoints == 0 )
             _descriptors.release();
         else
@@ -1119,9 +1252,13 @@ namespace ORB_SLAM3
 
         int offset = 0;
         //Modified for speeding up stereo fisheye matching
-        int monoIndex = 0, stereoIndex = nkeypoints-1;
-        for (int level = 0; level < nlevels; ++level)
-        {
+
+        std::atomic<int> monoIndex{0};
+        std::atomic<int> stereoIndex{nkeypoints-1};
+
+        tbb::parallel_for(tbb::blocked_range<int>(0, nlevels), [&](tbb::blocked_range<int> rnlevels) {
+        
+        for (int level = rnlevels.begin(); level < rnlevels.end(); ++level) {
             vector<KeyPoint>& keypoints = allKeypoints[level];
             int nkeypointsLevel = (int)keypoints.size();
 
@@ -1163,7 +1300,8 @@ namespace ORB_SLAM3
                 i++;
             }
         }
-        //cout << "[ORBextractor]: extracted " << _keypoints.size() << " KeyPoints" << endl;
+        });
+
         return monoIndex;
     }
 
