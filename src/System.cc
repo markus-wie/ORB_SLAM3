@@ -396,7 +396,7 @@ Sophus::SE3f System::TrackRGBD(const cv::Mat &im, const cv::Mat &depthmap, const
     return Tcw;
 }
 
-Sophus::SE3f System::TrackMonocular(const cv::Mat &im, const cv::Mat &mask, const double &timestamp, const vector<IMU::Point>& vImuMeas, string filename)
+Sophus::SE3f System::TrackMonocular(const cv::Mat &im, const cv::Mat &mask, const cv::Mat &occupancy_grid, const double &timestamp, const vector<IMU::Point>& vImuMeas, string filename)
 {
 
     {
@@ -463,7 +463,7 @@ Sophus::SE3f System::TrackMonocular(const cv::Mat &im, const cv::Mat &mask, cons
         for(size_t i_imu = 0; i_imu < vImuMeas.size(); i_imu++)
             mpTracker->GrabImuData(vImuMeas[i_imu]);
 
-    Sophus::SE3f Tcw = mpTracker->GrabImageMonocular(imToFeed, mask, timestamp,filename);
+    Sophus::SE3f Tcw = mpTracker->GrabImageMonocular(imToFeed, mask, occupancy_grid, timestamp,filename);
 
     unique_lock<mutex> lock2(mMutexState);
     mTrackingState = mpTracker->mState;
@@ -1334,6 +1334,22 @@ vector<cv::KeyPoint> System::GetTrackedKeyPointsUn()
 {
     unique_lock<mutex> lock(mMutexState);
     return mTrackedKeyPointsUn;
+}
+
+std::vector<Map*> System::GetAllMaps() 
+{
+    return mpAtlas->GetAllMaps();
+    mpAtlas->GetAllKeyFrames();
+}
+
+Map* System::GetCurrentMap()
+{
+    return mpAtlas->GetCurrentMap();
+}
+
+map<long unsigned int, KeyFrame*> System::GetAtlasKeyframes()
+{
+    return mpAtlas->GetAtlasKeyframes();
 }
 
 double System::GetTimeFromIMUInit()

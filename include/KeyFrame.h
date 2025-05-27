@@ -195,7 +195,7 @@ class KeyFrame
 public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
     KeyFrame();
-    KeyFrame(Frame &F, Map* pMap, KeyFrameDatabase* pKFDB);
+    KeyFrame(Frame &F, Map* pMap, KeyFrameDatabase* pKFDB, const cv::Mat &occupancy_grid);
 
     // Pose functions
     void SetPose(const Sophus::SE3f &Tcw);
@@ -369,6 +369,8 @@ public:
     long unsigned int mnBALocalForMerge;
 
     float mfScale;
+
+    const cv::Mat mOccupancyGrid;
 
     // Calibration parameters
     const float fx, fy, cx, cy, invfx, invfy, mbf, mb, mThDepth;
