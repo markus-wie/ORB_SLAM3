@@ -38,3 +38,8 @@ mkdir build
 cd build
 cmake .. -DCMAKE_BUILD_TYPE=Release
 make -j4
+
+# From https://github.com/jeremysalwen/ORB_SLAM_COMMUNITY/commit/d8bf111a6e595e1630e915e4c95168f5a6f02570 (including changes in DBoW2)
+cd ..
+echo "Converting vocabulary to binary"
+./tools/bin_vocabulary

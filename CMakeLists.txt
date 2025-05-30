@@ -128,6 +128,74 @@ target_link_libraries(${PROJECT_NAME}
     ${TBB_LIBRARIES}
 )
 
+set(ORB_VOCABULARY_FILES
+    ${PROJECT_SOURCE_DIR}/Vocabulary/ORBvoc.bin
+    ${PROJECT_SOURCE_DIR}/Vocabulary/ORBvoc.txt
+)
+
+foreach(ORB_VOCABULARY_FILE IN LISTS ORB_VOCABULARY_FILES)
+    if(NOT EXISTS ${ORB_VOCABULARY_FILE} AND NOT BUILD_EXAMPLES)
+        message(WARNING "ORB-SLAM3 vocabulary files missing and BUILD_EXAMPLES=OFF. The install step may fail.")
+    endif()
+endforeach()
+
+install(
+    FILES ${ORB_VOCABULARY_FILES}
+    DESTINATION share/${PROJECT_NAME}/Vocabulary
+)
+
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/tools)
+add_executable(bin_vocabulary tools/bin_vocabulary.cc)
+target_include_directories(bin_vocabulary BEFORE PRIVATE
+    ${PROJECT_SOURCE_DIR}
+    ${PROJECT_SOURCE_DIR}/include
+    ${PROJECT_SOURCE_DIR}/include/CameraModels
+)
+
+target_include_directories(bin_vocabulary SYSTEM PRIVATE
+    ${EIGEN3_INCLUDE_DIR}
+    ${Pangolin_INCLUDE_DIRS}
+    ${TBB_INCLUDE_DIR}
+    ${OpenCV_INCLUDE_DIRS}
+)
+
+target_link_libraries(bin_vocabulary
+PRIVATE
+    ${PROJECT_NAME}
+    ${OpenCV_LIBS}
+    ${EIGEN3_LIBS}
+    ${Pangolin_LIBRARIES}
+    g2o::core
+    g2o::types_sba
+    g2o::types_sim3
+    g2o::types_slam3d
+    g2o::solver_eigen
+    g2o::solver_dense
+    Sophus::Sophus
+    DBoW2
+    -lboost_serialization
+    -lcrypto
+    ${TBB_LIBRARIES}
+)
+
+add_custom_command(
+    OUTPUT ${PROJECT_SOURCE_DIR}/Vocabulary/ORBvoc.txt
+    COMMAND ${CMAKE_COMMAND} -E tar xf ORBvoc.txt.tar.gz
+    WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/Vocabulary
+    DEPENDS ${PROJECT_SOURCE_DIR}/Vocabulary/ORBvoc.txt.tar.gz
+    COMMENT "Extracting ORBvoc.txt from tarball"
+)
+add_custom_command(
+    OUTPUT ${PROJECT_SOURCE_DIR}/Vocabulary/ORBvoc.bin
+    COMMAND $<TARGET_FILE:bin_vocabulary>
+    WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+    DEPENDS ${PROJECT_SOURCE_DIR}/Vocabulary/ORBvoc.txt bin_vocabulary
+    COMMENT "Converting ORBvoc.txt to ORBvoc.bin"
+)
+add_custom_target(generate_vocabulary ALL
+    DEPENDS ${PROJECT_SOURCE_DIR}/Vocabulary/ORBvoc.bin
+)
+
 # If RealSense SDK is found the library is added and its examples compiled
 if(realsense2_FOUND)
     include_directories(${PROJECT_NAME}
@@ -137,7 +205,6 @@ if(realsense2_FOUND)
     ${realsense2_LIBRARY}
     )
 endif()
-
 
 # Build examples
 
