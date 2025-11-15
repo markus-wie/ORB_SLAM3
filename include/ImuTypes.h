@@ -20,6 +20,7 @@
 #ifndef IMUTYPES_H
 #define IMUTYPES_H
 
+#include <iostream>
 #include <vector>
 #include <utility>
 #include <opencv2/core/core.hpp>

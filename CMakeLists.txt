@@ -44,11 +44,9 @@ find_package(Eigen3 3.4 REQUIRED)
 find_package(Pangolin REQUIRED)
 find_package(realsense2)
 find_package(g2o REQUIRED)
+find_package(Sophus REQUIRED)
 
 add_subdirectory(Thirdparty/DBoW2)
-add_subdirectory(Thirdparty/Sophus)
-
-set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/lib)
 
 add_library(${PROJECT_NAME} SHARED
     src/System.cc
@@ -111,15 +109,11 @@ add_library(${PROJECT_NAME} SHARED
     include/Settings.h
 )
 
-# Add dependency on subdirectory targets
-#add_dependencies(${PROJECT_NAME} g2o DBoW2 Sophus)
-
 target_include_directories(${PROJECT_NAME} PRIVATE
     BEFORE
     ${PROJECT_SOURCE_DIR}
     ${PROJECT_SOURCE_DIR}/include
     ${PROJECT_SOURCE_DIR}/include/CameraModels
-    ${PROJECT_SOURCE_DIR}/Thirdparty/Sophus
 )
 
 target_include_directories(${PROJECT_NAME} SYSTEM PRIVATE
@@ -139,11 +133,16 @@ target_link_libraries(${PROJECT_NAME}
     g2o::types_slam3d
     g2o::solver_eigen
     g2o::solver_dense
-    sophus
+    Sophus::Sophus
     DBoW2
     -lboost_serialization
     -lcrypto
     ${TBB_LIBRARIES}
+)
+
+install(
+  DIRECTORY include/
+  DESTINATION include
 )
 
 set(ORB_VOCABULARY_FILES

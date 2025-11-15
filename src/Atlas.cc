@@ -16,6 +16,8 @@
 * If not, see <http://www.gnu.org/licenses/>.
 */
 
+#include <iostream>
+
 #include "Atlas.h"
 #include "Viewer.h"
 
