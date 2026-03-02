@@ -493,7 +493,10 @@ Sophus::SE3f System::TrackMonocular(const cv::Mat &im, const cv::Mat &mask, cons
     return Tcw;
 }
 
-
+Sophus::SE3f System::TrackMonocular(const cv::Mat &im, const double &timestamp, const vector<IMU::Point>& vImuMeas, string filename)
+{
+    return TrackMonocular(im, cv::Mat(), cv::Mat(), timestamp, vImuMeas, filename);
+}
 
 void System::ActivateLocalizationMode()
 {
