@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>orb_slam3</name>
+  <version>1.0.0</version>
+  <description>ORB-SLAM3 visual-inertial SLAM library.</description>
+
+  <maintainer email="maintainer@example.com">ORB-SLAM3 maintainers</maintainer>
+  <license>GPL-3.0-only</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>eigen</depend>
+  <depend>eigen3_cmake_module</depend>
+  <depend>libopencv-dev</depend>
+  <depend>pangolin</depend>
+  <!-- <depend>librealsense2</depend> -->
+  <depend>libg2o-dev</depend>
+  <depend>sophus</depend>
+  <depend>tbb</depend>
+  <depend>libboost-serialization-dev</depend>
+  <depend>libssl-dev</depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

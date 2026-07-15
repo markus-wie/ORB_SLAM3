@@ -1,5 +1,11 @@
 # ORB-SLAM3
 
+## ROS2
+
+This fork has been modified to act as a ROS2 package for ROS2 Jazzy, Kilted and above. It might work with other ROS2 versions, but it has not been tested.
+
+The fork has also been modified to use the available ROS2 packages for Pangolin and g2o, instead of the included third-party libraries.
+
 ### V1.0, December 22th, 2021
 **Authors:** Carlos Campos, Richard Elvira, Juan J. Gómez Rodríguez, [José M. M. Montiel](http://webdiis.unizar.es/~josemari/), [Juan D. Tardos](http://webdiis.unizar.es/~jdtardos/).
 

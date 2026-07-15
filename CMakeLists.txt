@@ -1,5 +1,7 @@
-cmake_minimum_required(VERSION 3.8)
-project(ORB_SLAM3)
+cmake_minimum_required(VERSION 3.20)
+project(orb_slam3)
+
+find_package(ament_cmake REQUIRED)
 
 IF(NOT CMAKE_BUILD_TYPE)
     SET(CMAKE_BUILD_TYPE Release)
@@ -42,7 +44,7 @@ endif()
 
 find_package(Eigen3 3.4 REQUIRED)
 find_package(Pangolin REQUIRED)
-find_package(realsense2)
+find_package(realsense2 QUIET)
 find_package(g2o REQUIRED)
 find_package(Sophus REQUIRED)
 
@@ -109,11 +111,12 @@ add_library(${PROJECT_NAME} SHARED
     include/Settings.h
 )
 
-target_include_directories(${PROJECT_NAME} PUBLIC
-    BEFORE
-    ${PROJECT_SOURCE_DIR}
-    ${PROJECT_SOURCE_DIR}/include
-    ${PROJECT_SOURCE_DIR}/include/CameraModels
+target_include_directories(${PROJECT_NAME} BEFORE PUBLIC
+    $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}>
+    $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
+    $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include/CameraModels>
+    $<INSTALL_INTERFACE:include>
+    $<INSTALL_INTERFACE:include/CameraModels>
 )
 
 target_include_directories(${PROJECT_NAME} SYSTEM PUBLIC
@@ -141,8 +144,41 @@ target_link_libraries(${PROJECT_NAME}
 )
 
 install(
-  DIRECTORY include/
-  DESTINATION include
+    DIRECTORY include/
+    DESTINATION include
+)
+
+install(
+    DIRECTORY Thirdparty/DBoW2/DBoW2/
+    DESTINATION include/Thirdparty/DBoW2/DBoW2
+)
+
+install(
+    TARGETS ${PROJECT_NAME}
+    EXPORT ${PROJECT_NAME}Targets
+    LIBRARY DESTINATION lib
+    ARCHIVE DESTINATION lib
+    RUNTIME DESTINATION bin
+)
+
+install(
+    TARGETS DBoW2
+    EXPORT ${PROJECT_NAME}Targets
+    LIBRARY DESTINATION lib
+    ARCHIVE DESTINATION lib
+    RUNTIME DESTINATION bin
+)
+
+install(
+    EXPORT ${PROJECT_NAME}Targets
+    FILE ${PROJECT_NAME}Targets.cmake
+    NAMESPACE ${PROJECT_NAME}::
+    DESTINATION share/${PROJECT_NAME}/cmake
+)
+
+install(
+    FILES package.xml
+    DESTINATION share/${PROJECT_NAME}
 )
 
 set(ORB_VOCABULARY_FILES
@@ -216,14 +252,17 @@ add_custom_target(generate_vocabulary ALL
 # If RealSense SDK is found the library is added and its examples compiled
 if(realsense2_FOUND)
     include_directories(${PROJECT_NAME}
-    ${realsense_INCLUDE_DIR}
+        ${realsense_INCLUDE_DIR}
     )
     target_link_libraries(${PROJECT_NAME}
-    ${realsense2_LIBRARY}
+        ${realsense2_LIBRARY}
     )
 endif()
 
 # Build examples
+option(BUILD_EXAMPLES "Build ORB-SLAM3 tools and example executables" OFF)
+
+if(BUILD_EXAMPLES)
 
 # RGB-D examples
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/Examples/RGB-D)
@@ -267,7 +306,6 @@ if(realsense2_FOUND)
     add_executable(stereo_realsense_t265
             Examples/Stereo/stereo_realsense_t265.cc)
     target_link_libraries(stereo_realsense_t265 ${PROJECT_NAME})
-
     add_executable(stereo_realsense_D435i
             Examples/Stereo/stereo_realsense_D435i.cc)
     target_link_libraries(stereo_realsense_D435i ${PROJECT_NAME})
@@ -475,3 +513,23 @@ if(realsense2_FOUND)
             Examples_old/Stereo-Inertial/stereo_inertial_realsense_D435i.cc)
     target_link_libraries(stereo_inertial_realsense_D435i_old ${PROJECT_NAME})
 endif()
+
+endif()
+
+if(BUILD_TESTING)
+    find_package(ament_lint_auto REQUIRED)
+    # Skip these checks until copyright and license headers are added.
+    set(ament_cmake_copyright_FOUND TRUE)
+    set(ament_cmake_cpplint_FOUND TRUE)
+    ament_lint_auto_find_test_dependencies()
+endif()
+
+if(realsense2_FOUND)
+    ament_export_dependencies(realsense2)
+endif()
+
+ament_export_include_directories(include)
+ament_export_targets(${PROJECT_NAME}Targets HAS_LIBRARY_TARGET)
+ament_export_dependencies(OpenCV Eigen3 Pangolin g2o Sophus)
+
+ament_package()
